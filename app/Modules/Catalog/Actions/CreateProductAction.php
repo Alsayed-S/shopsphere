@@ -8,18 +8,12 @@ use App\Modules\Catalog\Models\Product;
 
 class CreateProductAction
 {
-    /**
-     * Create a new class instance.
-     */
-    public function __construct()
-    {
-        //
-    }
+    
 
       /**
      * Create a new product.
      */
-    public function execute(array $data)
+    public function execute(array $data):product
     {
         return Product::query()->create($data);
     }
