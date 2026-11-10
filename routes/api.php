@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Modules\Catalog\Controllers\CategoryController;
 use App\Http\Controllers\Modules\Catalog\Controllers\ProductController;
 use Illuminate\Http\Request;
@@ -33,3 +34,7 @@ Route::post('/categories', [CategoryController::class, 'store']);
 Route::get('/categories/{id}', [CategoryController::class, 'show']);
 Route::put('/categories/{id}', [CategoryController::class, 'update']);
 Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
+
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:3,1');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
