@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Modules\Cart\Controllers\CartController;
 use App\Http\Controllers\Modules\Catalog\Controllers\CategoryController;
 use App\Http\Controllers\Modules\Catalog\Controllers\ProductController;
 use Illuminate\Http\Request;
@@ -38,3 +39,16 @@ Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:3,1');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+
+//cart
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/cart', [CartController::class, 'index']);
+
+    Route::post('/cart/items', [CartController::class, 'addItem']);
+
+    Route::patch('/cart/items/{itemId}', [CartController::class, 'updateItem']);
+
+    Route::delete('/cart/items/{itemId}', [CartController::class, 'removeItem']);
+
+    Route::delete('/cart', [CartController::class, 'clear']);
+});
