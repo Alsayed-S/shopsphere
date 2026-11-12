@@ -38,7 +38,11 @@ class CartService
             $product,
             $quantity
         ) {
-            $cart = $this->getOrCreateCart($user);
+            $this->getOrCreateCart($user);
+
+            $cart = $user->cart()
+                ->lockForUpdate()
+                ->firstOrFail();
 
             $cartItem = $cart->items()->firstOrNew([
                 'product_id' => $product->id,
@@ -69,7 +73,9 @@ class CartService
             $cartItemId,
             $quantity
         ) {
-            $cart = $user->cart()->firstOrFail();
+            $cart = $user->cart()
+                ->lockForUpdate()
+                ->firstOrFail();
 
             $cartItem = $cart->items()->findOrFail($cartItemId);
 
@@ -83,7 +89,9 @@ class CartService
     public function removeProduct(User $user, int $cartItemId): void
     {
         DB::transaction(function () use ($user, $cartItemId) {
-            $cart = $user->cart()->firstOrFail();
+            $cart = $user->cart()
+                ->lockForUpdate()
+                ->firstOrFail();
 
             $cartItem = $cart->items()->findOrFail($cartItemId);
 
@@ -93,12 +101,16 @@ class CartService
 
     public function clearCart(User $user): void
     {
-        $cart = $user->cart()->first();
+        DB::transaction(function () use ($user) {
+            $cart = $user->cart()
+                ->lockForUpdate()
+                ->first();
 
-        if (! $cart) {
-            return;
-        }
+            if (! $cart) {
+                return;
+            }
 
-        $cart->items()->delete();
+            $cart->items()->delete();
+        });
     }
 }
