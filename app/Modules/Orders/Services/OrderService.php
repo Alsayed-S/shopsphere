@@ -84,4 +84,37 @@ class OrderService
             ->latest()
             ->paginate($perPage);
     }
+
+    public function getUserOrder(User $user, int $orderId): Order
+    {
+        return $user->orders()
+            ->with('items')
+            ->findOrFail($orderId);
+    }
+
+    public function cancelOrder(User $user, int $orderId): Order
+    {
+        return DB::transaction(function () use ($user, $orderId) {
+            $order = $user->orders()
+                ->lockForUpdate()
+                ->findOrFail($orderId);
+
+            $cancellableStatuses = [
+                OrderStatus::PENDING,
+                OrderStatus::CONFIRMED,
+                OrderStatus::PROCESSING,
+            ];
+
+            if (! in_array($order->status, $cancellableStatuses, true)) {
+                throw new InvalidArgumentException(
+                    'This order cannot be cancelled.'
+                );
+            }
+
+            $order->status = OrderStatus::CANCELLED;
+            $order->save();
+
+            return $order->load('items');
+        });
+    }
 }
