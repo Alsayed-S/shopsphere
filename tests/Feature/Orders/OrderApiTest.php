@@ -6,6 +6,9 @@ use App\Models\User;
 use App\Modules\Catalog\Models\Product;
 use App\Modules\Orders\Models\Order;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Modules\Orders\Enums\OrderStatus;
+use App\Modules\Orders\Enums\PaymentStatus;
+use App\Modules\Orders\Models\OrderItem;
 use Tests\TestCase;
 
 class OrderApiTest extends TestCase
@@ -264,5 +267,215 @@ class OrderApiTest extends TestCase
             ->assertJsonPath('pagination.per_page', 10)
             ->assertJsonPath('pagination.total', 12)
             ->assertJsonCount(10, 'data');
+    }
+
+    public function test_guest_cannot_view_order_details(): void
+    {
+        $order = Order::factory()->create();
+
+        $response = $this->getJson("/api/orders/{$order->id}");
+
+        $response->assertUnauthorized();
+    }
+
+    public function test_user_can_view_their_own_order_details(): void
+    {
+        // Arrange
+        $user = User::factory()->create();
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'shipping_name' => 'Test Customer',
+            'shipping_phone' => '01234567890',
+            'shipping_address' => 'Cairo, Egypt',
+        ]);
+
+        $order->items()->create([
+            'product_id' => null,
+            'product_name' => 'Test Product',
+            'product_slug' => 'test-product',
+            'unit_price' => '19.99',
+            'quantity' => 2,
+            'subtotal' => '39.98',
+        ]);
+
+        // Act
+        $response = $this->actingAs($user)
+            ->getJson("/api/orders/{$order->id}");
+
+        // Assert
+        $response->assertOk()
+            ->assertJsonPath('data.id', $order->id)
+            ->assertJsonPath('data.shipping.name', 'Test Customer')
+            ->assertJsonPath('data.shipping.phone', '01234567890')
+            ->assertJsonPath('data.shipping.address', 'Cairo, Egypt')
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.items.0.product_name', 'Test Product')
+            ->assertJsonPath('data.items.0.quantity', 2)
+            ->assertJsonPath('data.items.0.subtotal', '39.98');
+    }
+
+    public function test_user_cannot_view_another_users_order_details(): void
+    {
+        // Arrange
+        $user = User::factory()->create();
+        $anotherUser = User::factory()->create();
+
+        $order = Order::factory()->create([
+            'user_id' => $anotherUser->id,
+        ]);
+
+        // Act
+        $response = $this->actingAs($user)
+            ->getJson("/api/orders/{$order->id}");
+
+        // Assert
+        $response->assertNotFound();
+    }
+
+    public function test_user_cannot_view_nonexistent_order_details(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)
+            ->getJson('/api/orders/999999');
+
+        $response->assertNotFound();
+    }
+
+    public function test_guest_cannot_cancel_an_order(): void
+    {
+        $order = Order::factory()->create();
+
+        $response = $this->postJson("/api/orders/{$order->id}/cancel");
+
+        $response->assertUnauthorized();
+    }
+
+    public function test_user_can_cancel_a_pending_order(): void
+    {
+        $this->assertOrderCanBeCancelled(OrderStatus::PENDING);
+    }
+
+    public function test_user_can_cancel_a_confirmed_order(): void
+    {
+        $this->assertOrderCanBeCancelled(OrderStatus::CONFIRMED);
+    }
+
+    public function test_user_can_cancel_a_processing_order(): void
+    {
+        $this->assertOrderCanBeCancelled(OrderStatus::PROCESSING);
+    }
+
+    public function test_user_cannot_cancel_a_shipped_order(): void
+    {
+        $this->assertOrderCannotBeCancelled(OrderStatus::SHIPPED);
+    }
+
+    public function test_user_cannot_cancel_a_delivered_order(): void
+    {
+        $this->assertOrderCannotBeCancelled(OrderStatus::DELIVERED);
+    }
+
+    public function test_user_cannot_cancel_an_already_cancelled_order(): void
+    {
+        $this->assertOrderCannotBeCancelled(OrderStatus::CANCELLED);
+    }
+
+    public function test_user_cannot_cancel_another_users_order(): void
+    {
+        // Arrange
+        $user = User::factory()->create();
+        $anotherUser = User::factory()->create();
+
+        $order = Order::factory()->create([
+            'user_id' => $anotherUser->id,
+            'status' => OrderStatus::PENDING,
+        ]);
+
+        // Act
+        $response = $this->actingAs($user)
+            ->postJson("/api/orders/{$order->id}/cancel");
+
+        // Assert
+        $response->assertNotFound();
+
+        $this->assertDatabaseHas('orders', [
+            'id' => $order->id,
+            'status' => OrderStatus::PENDING->value,
+        ]);
+    }
+
+    public function test_cancelling_an_order_does_not_change_its_payment_status(): void
+    {
+        // Arrange
+        $user = User::factory()->create();
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'status' => OrderStatus::PENDING,
+            'payment_status' => PaymentStatus::PAID,
+        ]);
+
+        // Act
+        $response = $this->actingAs($user)
+            ->postJson("/api/orders/{$order->id}/cancel");
+
+        // Assert
+        $response->assertOk()
+            ->assertJsonPath('data.status', 'cancelled');
+
+        $this->assertDatabaseHas('orders', [
+            'id' => $order->id,
+            'status' => OrderStatus::CANCELLED->value,
+            'payment_status' => PaymentStatus::PAID->value,
+        ]);
+    }
+
+    private function assertOrderCanBeCancelled(OrderStatus $status): void
+    {
+        // Arrange
+        $user = User::factory()->create();
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'status' => $status,
+        ]);
+
+        // Act
+        $response = $this->actingAs($user)
+            ->postJson("/api/orders/{$order->id}/cancel");
+
+        // Assert
+        $response->assertOk()
+            ->assertJsonPath('data.status', 'cancelled');
+
+        $this->assertDatabaseHas('orders', [
+            'id' => $order->id,
+            'status' => OrderStatus::CANCELLED->value,
+        ]);
+    }
+
+    private function assertOrderCannotBeCancelled(OrderStatus $status): void
+    {
+        // Arrange
+        $user = User::factory()->create();
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'status' => $status,
+        ]);
+
+        // Act
+        $response = $this->actingAs($user)
+            ->postJson("/api/orders/{$order->id}/cancel");
+
+        // Assert
+        $response->assertUnprocessable();
+
+        $this->assertDatabaseHas('orders', [
+            'id' => $order->id,
+            'status' => $status->value,
+        ]);
     }
 }

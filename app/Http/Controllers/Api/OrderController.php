@@ -20,8 +20,6 @@ class OrderController extends Controller
         private readonly OrderService $orderService
     ) {}
 
-
-
     public function index(OrderIndexRequest $request): JsonResponse
     {
         $perPage = (int) ($request->validated('per_page') ?? 10);
@@ -55,6 +53,39 @@ class OrderController extends Controller
             return $this->createdResponse(
                 'Order created successfully.',
                 new OrderResource($order)
+            );
+        } catch (InvalidArgumentException $exception) {
+            return $this->errorResponse(
+                $exception->getMessage(),
+                422
+            );
+        }
+    }
+
+    public function show(Request $request, int $order): JsonResponse
+    {
+        $userOrder = $this->orderService->getUserOrder(
+            $request->user(),
+            $order
+        );
+
+        return $this->successResponse(
+            'Order details retrieved successfully.',
+            new OrderResource($userOrder)
+        );
+    }
+
+    public function cancel(Request $request, int $order): JsonResponse
+    {
+        try {
+            $cancelledOrder = $this->orderService->cancelOrder(
+                $request->user(),
+                $order
+            );
+
+            return $this->successResponse(
+                'Order cancelled successfully.',
+                new OrderResource($cancelledOrder)
             );
         } catch (InvalidArgumentException $exception) {
             return $this->errorResponse(
